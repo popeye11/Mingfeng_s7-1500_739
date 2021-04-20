@@ -3,10 +3,13 @@ import s7MingfengLib
 import DBTables
 import requests
 import json
+import os
 #plc read sampling time [sec]:
 ts_plc_update       =    2
 #ip upload sampling time [sec]:
-ts_ip_update        =    5  
+ts_ip_update        =    5
+# reboot sampling time [sec]:
+ts_reboot   =    2
 #  s71500 rack number:
 rackNo   =    0
 #  s71500 slot number:
@@ -72,10 +75,18 @@ def step_fun_upload_ip():
     except:
         print("upload ip failed")
     #ip_upload(auth_url,optIn_url,api_ip_upload,api_password,organId,devId,ipadr)
+     
+def step_fun_reboot():
+    print ("reboot ...")
+    os.system('sudo reboot')
+
+
+
 
 if __name__ == "__main__":
     mqttClient = s7MingfengLib.on_mqtt_connect(mqtthost,mqttport,clientname,username,password)
     sched = s7MingfengLib.task_scheduler()
     sched.add_job(step_fun_plc, 'cron', second='*/'+str(ts_plc_update),hour='*',max_instances = int(1e25))
     sched.add_job(step_fun_upload_ip, 'cron', second='*/'+str(ts_ip_update),hour='*',max_instances = int(1e25))
+    sched.add_job(step_fun_reboot, 'cron', minute='*/'+str(ts_reboot),hour='*',max_instances = int(1e25))
     sched.start()
