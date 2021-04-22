@@ -4,16 +4,21 @@ import DBTables
 import requests
 import json
 import os
+import csv
+import numpy as np
+import pandas as pd
+
 #plc read sampling time [sec]:
-ts_plc_update       =    2
+ts_plc_update       =    5
 #ip upload sampling time [sec]:
-ts_ip_update        =    5
+ts_ip_update        =    10
 # reboot sampling time [min]:
 ts_reboot   =    20
 #  s71500 rack number:
 rackNo   =    0
 #  s71500 slot number:
 slotNo   =    1
+
 #  s71500 device number:
 deviceNr =    2
 # s71500 ip adress:
@@ -33,6 +38,8 @@ username   = "simcheng"
 # client password:
 password   = "Simcheng2020"
 mqttport =    1883
+# maximal failed count to reboot
+maxFailCount = 20
 # topics definition
 # topic1   =    "Mingfeng/3003/scy1"
 # topic2   =    "Mingfeng/3003/scy2"
@@ -50,19 +57,33 @@ api_ip_upload = 'user'      # user name
 api_password  = 'user'      # password
 auth_url = "http://88.99.24.40:8088/api/auth/signin";
 optIn_url = "http://88.99.24.40:8088/api/optIn";
+# debug parameters
 uploadFailCount =0
 upload_success = True
+
 def step_fun_plc():
+    global upload_success
     try:
+        Tstart = time.time()
         plc =s7MingfengLib.plcConnect(PLC_IP,rackNo,slotNo)
         DBIdNo,Data = s7MingfengLib.ReadAllDBs(plc,DBTables.DBIDs)
         scy1_Ids,scy1_data =s7MingfengLib.readIDs(DBTables.DBIDs,Data,1)
         scy2_Ids,scy2_data =s7MingfengLib.readIDs(DBTables.DBIDs,Data,2)
         scy3_Ids,scy3_data =s7MingfengLib.readIDs(DBTables.DBIDs,Data,3)
-        print(scy1_data)
         s7MingfengLib.on_publish(mqttClient,topic1,s7MingfengLib.Convert2SimchengForm(scy1_Ids, scy1_data) , 1)
+        time.sleep(0.2)
         s7MingfengLib.on_publish(mqttClient,topic2,s7MingfengLib.Convert2SimchengForm(scy2_Ids, scy2_data) , 1)
+        time.sleep(0.2)
         s7MingfengLib.on_publish(mqttClient,topic3,s7MingfengLib.Convert2SimchengForm(scy3_Ids, scy3_data) , 1)
+        Tend = time.time()
+        duration= Tend-Tstart
+        localTimeStamp =time.localtime(Tstart)
+        localDateStr=str(localTimeStamp.tm_year)+'.'+str(localTimeStamp.tm_mon)+'.'+str(localTimeStamp.tm_mday)
+        localTimeStr=str(localTimeStamp.tm_hour)+':'+str(localTimeStamp.tm_min)+':'+str(localTimeStamp.tm_sec)
+        rows = [localDateStr,localTimeStr,str(duration), str(upload_success)]
+        print(rows)
+        logname='log_'+str(localTimeStamp.tm_year)+'_'+str(localTimeStamp.tm_mon)+'_'+str(localTimeStamp.tm_mday)
+        s7MingfengLib.write_log(logname,rows) 
     except:
         print("please check the ethernet connection")
 
@@ -79,7 +100,7 @@ def step_fun_upload_ip():
         upload_success = False
         uploadFailCount = uploadFailCount+1
         print("upload ip failed "+str(uploadFailCount)+" of maximal 20 times")
-        if uploadFailCount > 20:
+        if uploadFailCount > maxFailCount:
             print ("reboot ...")
             os.system('sudo reboot')
     #ip_upload(auth_url,optIn_url,api_ip_upload,api_password,organId,devId,ipadr)
@@ -94,7 +115,7 @@ def step_upload_success_check():
     if upload_success is True:
         uploadFailCount =0
     else:
-        print("the ip communication is not avaliable !")
+        print("the ip communication is not available !")
 
 if __name__ == "__main__":
 
@@ -106,3 +127,4 @@ if __name__ == "__main__":
     
     #sched.add_job(step_fun_reboot, 'cron', minute='*/'+str(ts_reboot),hour='*',max_instances = int(1e25))
     sched.start()
+    
